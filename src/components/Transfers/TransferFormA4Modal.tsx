@@ -54,13 +54,21 @@ interface TransferFormA4ModalProps {
   formConfig?: FormAdjustmentConfig;
   onUpdateFormConfig?: (config: FormAdjustmentConfig) => void;
   onClose: () => void;
-  onApproveManager: (transferId: string, signature: string) => void;
-  onApproveIT: (transferId: string, signature: string) => void;
-  onApproveACC: (transferId: string, signature: string) => void;
+  onApproveManager: (transferId: string, signature: string, signerName?: string) => void;
+  onApproveIT: (transferId: string, signature: string, signerName?: string) => void;
+  onApproveACC: (transferId: string, signature: string, signerName?: string) => void;
   onFinalizeTransfer: (transfer: TransferForm) => void;
   onEditTransfer?: (transfer: TransferForm) => void;
   onDeleteTransfer?: (transferId: string) => void;
 }
+
+export const formatDisplaySignerName = (name?: string, fallback = '...........................................') => {
+  if (!name) return fallback;
+  if (name.startsWith('data:image/') || name.startsWith('http') || name.length > 60) {
+    return 'ผู้มีอำนาจลงนาม';
+  }
+  return name;
+};
 
 export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
   transfer,
@@ -125,12 +133,13 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
   const handleConfirmSignature = (signatureData: string, signerName: string) => {
     if (!transfer) return;
     const finalSignature = signatureData || signerName;
+    const cleanSignerName = signerName || currentUserName || `${currentUserRole} Specialist`;
     if (sigModal.role === 'IT') {
-      onApproveIT(transfer.id, finalSignature);
+      onApproveIT(transfer.id, finalSignature, cleanSignerName);
     } else if (sigModal.role === 'MANAGER') {
-      onApproveManager(transfer.id, finalSignature);
+      onApproveManager(transfer.id, finalSignature, cleanSignerName);
     } else if (sigModal.role === 'ACC') {
-      onApproveACC(transfer.id, finalSignature);
+      onApproveACC(transfer.id, finalSignature, cleanSignerName);
     }
   };
 
@@ -901,7 +910,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                             </div>
 
                             <div className="text-[8px] text-zinc-700 truncate">
-                              ชื่อ: <strong>{transfer.itApprovedBy || '...........................................'}</strong>
+                              ชื่อ: <strong>{formatDisplaySignerName(transfer.itApprovedBy)}</strong>
                             </div>
                           </div>
                         );
@@ -935,7 +944,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                             </div>
 
                             <div className="text-[8px] text-zinc-700 truncate">
-                              ชื่อ: <strong>{transfer.managerApprovedBy || '...........................................'}</strong>
+                              ชื่อ: <strong>{formatDisplaySignerName(transfer.managerApprovedBy)}</strong>
                             </div>
                           </div>
                         );
@@ -1033,7 +1042,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                             </div>
 
                             <div className="text-[8px] text-zinc-700 truncate">
-                              ชื่อ: <strong>{transfer.accApprovedBy || '...........................................'}</strong>
+                              ชื่อ: <strong>{formatDisplaySignerName(transfer.accApprovedBy)}</strong>
                             </div>
                           </div>
                         );
@@ -1168,7 +1177,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                     </div>
 
                     <div className="text-[9px] text-zinc-700">
-                      ชื่อ: <strong>{transfer.itApprovedBy || '...........................................'}</strong>
+                      ชื่อ: <strong>{formatDisplaySignerName(transfer.itApprovedBy)}</strong>
                     </div>
                   </div>
 
@@ -1197,7 +1206,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                     </div>
 
                     <div className="text-[9px] text-zinc-700">
-                      ชื่อ: <strong>{transfer.managerApprovedBy || '...........................................'}</strong>
+                      ชื่อ: <strong>{formatDisplaySignerName(transfer.managerApprovedBy)}</strong>
                     </div>
                   </div>
 
@@ -1226,7 +1235,7 @@ export const TransferFormA4Modal: React.FC<TransferFormA4ModalProps> = ({
                     </div>
 
                     <div className="text-[9px] text-zinc-700">
-                      ชื่อ: <strong>{transfer.accApprovedBy || '...........................................'}</strong>
+                      ชื่อ: <strong>{formatDisplaySignerName(transfer.accApprovedBy)}</strong>
                     </div>
                   </div>
                 </div>

@@ -45,6 +45,15 @@ interface TransferListProps {
   onDeleteTransfer: (transferId: string) => void;
 }
 
+// Helper to format clean display signer name and User-ID
+const formatSignerName = (approvedBy?: string, fallback = 'อนุมัติแล้ว') => {
+  if (!approvedBy) return fallback;
+  if (approvedBy.startsWith('data:image/') || approvedBy.startsWith('http') || approvedBy.length > 60) {
+    return 'ลงนามแล้ว (Digital Signed)';
+  }
+  return approvedBy;
+};
+
 export const TransferList: React.FC<TransferListProps> = ({
   transfers,
   currentUser,
@@ -248,12 +257,14 @@ export const TransferList: React.FC<TransferListProps> = ({
                 >
                   <div>
                     <div className="text-[10px] uppercase font-mono">1. ฝ่ายไอที (IT Specialist)</div>
-                    <div className="font-semibold">{t.itApproved ? t.itApprovedBy : 'รออนุมัติ'}</div>
+                    <div className="font-semibold text-xs truncate max-w-[180px]">
+                      {t.itApproved ? formatSignerName(t.itApprovedBy) : 'รออนุมัติ'}
+                    </div>
                   </div>
                   {t.itApproved ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   ) : (
-                    <Clock className="w-4 h-4 text-zinc-500" />
+                    <Clock className="w-4 h-4 text-zinc-500 shrink-0" />
                   )}
                 </div>
 
@@ -267,12 +278,14 @@ export const TransferList: React.FC<TransferListProps> = ({
                 >
                   <div>
                     <div className="text-[10px] uppercase font-mono">2. ผู้จัดการฝ่าย (Manager)</div>
-                    <div className="font-semibold">{t.managerApproved ? t.managerApprovedBy : 'รออนุมัติ'}</div>
+                    <div className="font-semibold text-xs truncate max-w-[180px]">
+                      {t.managerApproved ? formatSignerName(t.managerApprovedBy) : 'รออนุมัติ'}
+                    </div>
                   </div>
                   {t.managerApproved ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   ) : (
-                    <Clock className="w-4 h-4 text-zinc-500" />
+                    <Clock className="w-4 h-4 text-zinc-500 shrink-0" />
                   )}
                 </div>
 
@@ -286,12 +299,14 @@ export const TransferList: React.FC<TransferListProps> = ({
                 >
                   <div>
                     <div className="text-[10px] uppercase font-mono">3. ฝ่ายบัญชี (ACC Approval)</div>
-                    <div className="font-semibold">{t.accApproved ? t.accApprovedBy : 'รออนุมัติ'}</div>
+                    <div className="font-semibold text-xs truncate max-w-[180px]">
+                      {t.accApproved ? formatSignerName(t.accApprovedBy) : 'รออนุมัติ'}
+                    </div>
                   </div>
                   {t.accApproved ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                   ) : (
-                    <Clock className="w-4 h-4 text-zinc-500" />
+                    <Clock className="w-4 h-4 text-zinc-500 shrink-0" />
                   )}
                 </div>
               </div>

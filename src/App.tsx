@@ -409,19 +409,36 @@ export function App() {
   // =========================================================================
   // TRANSFER APPROVAL ENGINE (3-STEP DIGITAL SIGNATURES)
   // =========================================================================
+  // Helper to format clean display signer name and User-ID
+  const getCleanSignerName = (signerName?: string, signature?: string, role = 'IT') => {
+    if (signerName && !signerName.startsWith('data:image/') && !signerName.startsWith('http')) {
+      return signerName;
+    }
+    if (currentUser) {
+      const uName = currentUser.thaiName || currentUser.name;
+      const uStaff = currentUser.staffId ? ` (${currentUser.staffId})` : '';
+      return `${uName}${uStaff}`;
+    }
+    if (signature && !signature.startsWith('data:image/') && !signature.startsWith('http')) {
+      return signature;
+    }
+    return `${role} Specialist`;
+  };
+
   /**
    * ขั้นตอนที่ 1: ฝ่ายไอที / ผู้จัดทำ (IT Specialist / Prepared By)
    * เปลี่ยนสถานะจาก PENDING_IT -> PENDING_MANAGER
    */
-  const handleApproveIT = (transferId: string, signature: string) => {
+  const handleApproveIT = (transferId: string, signature: string, signerName?: string) => {
     const nowStr = new Date().toISOString().split('T')[0];
+    const approvedByName = getCleanSignerName(signerName, signature, 'IT');
     setTransfers((prev) =>
       prev.map((t) => {
         if (t.id === transferId) {
           return {
             ...t,
             itApproved: true,
-            itApprovedBy: signature,
+            itApprovedBy: approvedByName,
             itApprovedDate: nowStr,
             itSignature: signature,
             status: 'PENDING_MANAGER' as const,
@@ -436,15 +453,16 @@ export function App() {
    * ขั้นตอนที่ 2: ผู้จัดการแผนกต้นทาง (Transferor Department Manager)
    * เปลี่ยนสถานะจาก PENDING_MANAGER -> PENDING_ACC
    */
-  const handleApproveManager = (transferId: string, signature: string) => {
+  const handleApproveManager = (transferId: string, signature: string, signerName?: string) => {
     const nowStr = new Date().toISOString().split('T')[0];
+    const approvedByName = getCleanSignerName(signerName, signature, 'MANAGER');
     setTransfers((prev) =>
       prev.map((t) => {
         if (t.id === transferId) {
           return {
             ...t,
             managerApproved: true,
-            managerApprovedBy: signature,
+            managerApprovedBy: approvedByName,
             managerApprovedDate: nowStr,
             managerSignature: signature,
             status: 'PENDING_ACC' as const,
@@ -459,15 +477,16 @@ export function App() {
    * ขั้นตอนที่ 3: ฝ่ายบัญชีและการเงิน (Accounting Controller)
    * เปลี่ยนสถานะเป็น APPROVED (พร้อมส่งมอบและกดเสร็จสิ้น)
    */
-  const handleApproveACC = (transferId: string, signature: string) => {
+  const handleApproveACC = (transferId: string, signature: string, signerName?: string) => {
     const nowStr = new Date().toISOString().split('T')[0];
+    const approvedByName = getCleanSignerName(signerName, signature, 'ACC');
     setTransfers((prev) =>
       prev.map((t) => {
         if (t.id === transferId) {
           return {
             ...t,
             accApproved: true,
-            accApprovedBy: signature,
+            accApprovedBy: approvedByName,
             accApprovedDate: nowStr,
             accSignature: signature,
             status: 'APPROVED' as const,

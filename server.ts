@@ -174,8 +174,9 @@ async function initDatabaseTables() {
         department_name VARCHAR(255),
         branch_code VARCHAR(20) NOT NULL,
         branch_name VARCHAR(255),
-        avatar_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        avatar_url LONGTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
     await ensureTableColumns(connection, 'users', {
@@ -193,7 +194,7 @@ async function initDatabaseTables() {
       department_name: 'VARCHAR(255)',
       branch_code: 'VARCHAR(20) NOT NULL',
       branch_name: 'VARCHAR(255)',
-      avatar_url: 'TEXT',
+      avatar_url: 'LONGTEXT',
     });
 
     // 4. Assets Table
@@ -217,11 +218,12 @@ async function initDatabaseTables() {
         cost DECIMAL(12,2) NOT NULL DEFAULT 0.00,
         supplier VARCHAR(255),
         warranty_expire_date DATE,
-        notes TEXT,
-        image_url TEXT,
+        notes LONGTEXT,
+        image_url LONGTEXT,
         repair_logs JSON,
         custody_history JSON,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
     await ensureTableColumns(connection, 'assets', {
@@ -243,8 +245,8 @@ async function initDatabaseTables() {
       cost: 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
       supplier: 'VARCHAR(255)',
       warranty_expire_date: 'DATE',
-      notes: 'TEXT',
-      image_url: 'TEXT',
+      notes: 'LONGTEXT',
+      image_url: 'LONGTEXT',
       repair_logs: 'JSON',
       custody_history: 'JSON',
     });
@@ -259,28 +261,29 @@ async function initDatabaseTables() {
         originating_branch_code VARCHAR(20) NOT NULL,
         originating_dept VARCHAR(255) NOT NULL,
         reason_type VARCHAR(50) NOT NULL,
-        reason_note TEXT,
+        reason_note LONGTEXT,
         items JSON NOT NULL,
         it_approved TINYINT(1) NOT NULL DEFAULT 0,
         it_approved_by VARCHAR(255),
         it_approved_date DATETIME,
-        it_signature TEXT,
+        it_signature LONGTEXT,
         manager_approved TINYINT(1) NOT NULL DEFAULT 0,
         manager_approved_by VARCHAR(255),
         manager_approved_date DATETIME,
-        manager_signature TEXT,
+        manager_signature LONGTEXT,
         acc_approved TINYINT(1) NOT NULL DEFAULT 0,
         acc_approved_by VARCHAR(255),
         acc_approved_date DATETIME,
-        acc_signature TEXT,
+        acc_signature LONGTEXT,
         status VARCHAR(50) NOT NULL DEFAULT 'PENDING_IT',
         delivered_by VARCHAR(255),
         delivery_date DATETIME,
         vehicle_plate_no VARCHAR(50),
         receiver_sign_date DATETIME,
-        receiver_signature TEXT,
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        receiver_signature LONGTEXT,
+        notes LONGTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
     await ensureTableColumns(connection, 'transfer_forms', {
@@ -291,27 +294,27 @@ async function initDatabaseTables() {
       originating_branch_code: 'VARCHAR(20) NOT NULL',
       originating_dept: 'VARCHAR(255) NOT NULL',
       reason_type: 'VARCHAR(50) NOT NULL',
-      reason_note: 'TEXT',
+      reason_note: 'LONGTEXT',
       items: 'JSON NOT NULL',
       it_approved: 'TINYINT(1) NOT NULL DEFAULT 0',
       it_approved_by: 'VARCHAR(255)',
       it_approved_date: 'DATETIME',
-      it_signature: 'TEXT',
+      it_signature: 'LONGTEXT',
       manager_approved: 'TINYINT(1) NOT NULL DEFAULT 0',
       manager_approved_by: 'VARCHAR(255)',
       manager_approved_date: 'DATETIME',
-      manager_signature: 'TEXT',
+      manager_signature: 'LONGTEXT',
       acc_approved: 'TINYINT(1) NOT NULL DEFAULT 0',
       acc_approved_by: 'VARCHAR(255)',
       acc_approved_date: 'DATETIME',
-      acc_signature: 'TEXT',
+      acc_signature: 'LONGTEXT',
       status: "VARCHAR(50) NOT NULL DEFAULT 'PENDING_IT'",
       delivered_by: 'VARCHAR(255)',
       delivery_date: 'DATETIME',
       vehicle_plate_no: 'VARCHAR(50)',
       receiver_sign_date: 'DATETIME',
-      receiver_signature: 'TEXT',
-      notes: 'TEXT',
+      receiver_signature: 'LONGTEXT',
+      notes: 'LONGTEXT',
     });
 
     // 6. IT Tickets Table
@@ -319,7 +322,7 @@ async function initDatabaseTables() {
       CREATE TABLE IF NOT EXISTS it_tickets (
         id VARCHAR(50) NOT NULL PRIMARY KEY,
         subject VARCHAR(255) NOT NULL,
-        details TEXT NOT NULL,
+        details LONGTEXT NOT NULL,
         category VARCHAR(50) NOT NULL,
         priority VARCHAR(50) NOT NULL DEFAULT 'MEDIUM',
         status VARCHAR(50) NOT NULL DEFAULT 'NEW',
@@ -335,7 +338,7 @@ async function initDatabaseTables() {
         updated_at DATETIME NOT NULL,
         resolved_at DATETIME,
         resolution_hours DECIMAL(8,2),
-        resolution_note TEXT,
+        resolution_note LONGTEXT,
         repair_cost DECIMAL(12,2),
         repair_vendor VARCHAR(255),
         repair_sent_date DATE,
@@ -346,7 +349,7 @@ async function initDatabaseTables() {
     await ensureTableColumns(connection, 'it_tickets', {
       id: 'VARCHAR(50) NOT NULL',
       subject: 'VARCHAR(255) NOT NULL',
-      details: 'TEXT NOT NULL',
+      details: 'LONGTEXT NOT NULL',
       category: 'VARCHAR(50) NOT NULL',
       priority: "VARCHAR(50) NOT NULL DEFAULT 'MEDIUM'",
       status: "VARCHAR(50) NOT NULL DEFAULT 'NEW'",
@@ -362,7 +365,7 @@ async function initDatabaseTables() {
       updated_at: 'DATETIME NOT NULL',
       resolved_at: 'DATETIME',
       resolution_hours: 'DECIMAL(8,2)',
-      resolution_note: 'TEXT',
+      resolution_note: 'LONGTEXT',
       repair_cost: 'DECIMAL(12,2)',
       repair_vendor: 'VARCHAR(255)',
       repair_sent_date: 'DATE',

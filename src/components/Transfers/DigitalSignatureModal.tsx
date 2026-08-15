@@ -167,25 +167,29 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
   const handleSubmit = () => {
     let finalSignature = '';
 
+    const cleanUserNameWithId = currentUser?.staffId
+      ? `${signerName || effectiveUserName} (${currentUser.staffId})`
+      : signerName || effectiveUserName;
+
     if (activeTab === 'draw') {
       const canvas = canvasRef.current;
       if (canvas && hasDrawn) {
         finalSignature = canvas.toDataURL('image/png');
       } else {
-        finalSignature = signerName;
+        finalSignature = signerName || effectiveUserName;
       }
     } else if (activeTab === 'upload') {
       if (uploadedImage) {
         finalSignature = uploadedImage;
       } else {
-        finalSignature = signerName;
+        finalSignature = signerName || effectiveUserName;
       }
     } else {
       // Typed
       finalSignature = generateTypedSignatureDataUrl();
     }
 
-    onConfirm(finalSignature, signerName || effectiveUserName);
+    onConfirm(finalSignature, cleanUserNameWithId);
     onClose();
   };
 

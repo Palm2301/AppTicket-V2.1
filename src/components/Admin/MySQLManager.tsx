@@ -51,6 +51,8 @@ import {
   generateFullSqlDump,
   generatePhpBackendScripts,
   syncDataToMySQL,
+  DATABASE_SCHEMA_METADATA,
+  TableSchemaDef,
 } from '../../services/mysqlService';
 
 interface MySQLManagerProps {
@@ -83,6 +85,7 @@ export const MySQLManager: React.FC<MySQLManagerProps> = ({
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedPhp, setCopiedPhp] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<string>('assets');
   const [viewTab, setViewTab] = useState<'overview' | 'sqlViewer' | 'phpBridge' | 'guide'>('overview');
 
   const fetchStatus = async () => {
@@ -332,84 +335,169 @@ export const MySQLManager: React.FC<MySQLManagerProps> = ({
 
       {/* TAB 1: OVERVIEW & TABLE SCHEMA */}
       {viewTab === 'overview' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Table 1: Assets */}
-            <div className="bg-[#111420] border border-zinc-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Table className="w-4 h-4 text-blue-400" />
-                  <span className="font-bold text-sm text-white font-mono">assets</span>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-800">
-                  {assets.length} แถว
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400">
-                ทะเบียนทรัพย์สินทั้งหมด เลขที่สินทรัพย์, Serial No, สาขา, แผนก, ผู้ครอบครอง, บันทึกการซ่อม, ประวัติการโอน
-              </p>
-              <div className="text-[11px] text-zinc-500 font-mono">
-                Primary: id, Unique: asset_id
-              </div>
-            </div>
+        <div className="space-y-6">
+          {/* Table summary cards grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+            {DATABASE_SCHEMA_METADATA.map((tbl) => {
+              const count =
+                tbl.tableName === 'assets'
+                  ? assets.length
+                  : tbl.tableName === 'transfer_forms'
+                  ? transfers.length
+                  : tbl.tableName === 'it_tickets'
+                  ? tickets.length
+                  : tbl.tableName === 'users'
+                  ? staffList.length
+                  : tbl.tableName === 'branches'
+                  ? branches.length
+                  : tbl.tableName === 'departments'
+                  ? departments.length
+                  : tbl.tableName === 'weekly_problems'
+                  ? weeklyProblems.length
+                  : 2;
 
-            {/* Table 2: Transfer Forms */}
-            <div className="bg-[#111420] border border-zinc-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Table className="w-4 h-4 text-cyan-400" />
-                  <span className="font-bold text-sm text-white font-mono">transfer_forms</span>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
-                  {transfers.length} แถว
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400">
-                ใบโอนย้ายทรัพย์สิน A4 มาตรฐาน 3 ลายเซ็นดิจิทัล (IT &rarr; Manager &rarr; ACC) และรายละเอียดการจัดส่ง
-              </p>
-              <div className="text-[11px] text-zinc-500 font-mono">
-                Primary: id, Unique: form_no
-              </div>
-            </div>
+              const isSelected = selectedTable === tbl.tableName;
 
-            {/* Table 3: IT Tickets */}
-            <div className="bg-[#111420] border border-zinc-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Table className="w-4 h-4 text-amber-400" />
-                  <span className="font-bold text-sm text-white font-mono">it_tickets</span>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
-                  {tickets.length} แถว
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400">
-                ระบบเปิดใบแจ้งซ่อม Helpdesk, การมอบหมายงานช่างไอที, เวลา SLA, ค่าใช้จ่ายส่งซ่อมนอก และประวัติการแก้ปัญหา
-              </p>
-              <div className="text-[11px] text-zinc-500 font-mono">
-                Primary: id, Index: status
-              </div>
-            </div>
-
-            {/* Table 4: Users / Staff */}
-            <div className="bg-[#111420] border border-zinc-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Table className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-sm text-white font-mono">users</span>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                  {staffList.length} บัญชี
-                </span>
-              </div>
-              <p className="text-xs text-zinc-400">
-                ข้อมูลพนักงาน, รหัสผ่านเข้าระบบ, บทบาทสิทธิ์ (ADMIN, IT, ACC, MANAGER, USER) และสังกัดสาขา
-              </p>
-              <div className="text-[11px] text-zinc-500 font-mono">
-                Primary: id, Unique: staff_id
-              </div>
-            </div>
+              return (
+                <button
+                  key={tbl.tableName}
+                  onClick={() => setSelectedTable(tbl.tableName)}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-blue-600/20 border-blue-500 shadow-md shadow-blue-500/20'
+                      : 'bg-[#111420] border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <span className="font-mono text-xs font-bold text-white truncate">
+                      {tbl.tableName}
+                    </span>
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isSelected ? 'bg-blue-400' : 'bg-zinc-600'
+                      }`}
+                    />
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate">{tbl.thaiName}</div>
+                  <div className="mt-2 text-[11px] font-mono font-bold text-blue-400">
+                    {count} records
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
+          {/* Active Table Details Inspector */}
+          {(() => {
+            const currentTableDef =
+              DATABASE_SCHEMA_METADATA.find((t) => t.tableName === selectedTable) ||
+              DATABASE_SCHEMA_METADATA[0];
+
+            return (
+              <div className="bg-[#111420] border border-zinc-800 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Table className="w-5 h-5 text-blue-400" />
+                      <span className="text-base font-bold text-white font-mono">
+                        {currentTableDef.tableName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-zinc-800 text-zinc-300">
+                        {currentTableDef.thaiName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-800">
+                        PK: {currentTableDef.primaryKey}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400">{currentTableDef.description}</p>
+                  </div>
+
+                  {currentTableDef.relations.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-300 bg-black/40 px-3 py-1.5 rounded-lg border border-zinc-800">
+                      <span className="text-zinc-500 font-semibold">Foreign Keys / Relations:</span>
+                      {currentTableDef.relations.map((rel, idx) => (
+                        <span
+                          key={idx}
+                          className="font-mono text-cyan-300 bg-cyan-950/60 px-1.5 py-0.5 rounded text-[10px] border border-cyan-800/60"
+                        >
+                          {rel}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Column Table */}
+                <div className="overflow-x-auto rounded-xl border border-zinc-800/80">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-900/90 text-zinc-400 border-b border-zinc-800 font-semibold">
+                        <th className="py-2.5 px-3.5 w-12 text-center">#</th>
+                        <th className="py-2.5 px-3.5 font-mono">Field Name</th>
+                        <th className="py-2.5 px-3.5 font-mono">Data Type</th>
+                        <th className="py-2.5 px-3.5 text-center">Key</th>
+                        <th className="py-2.5 px-3.5 text-center">Null</th>
+                        <th className="py-2.5 px-3.5 font-mono">Default</th>
+                        <th className="py-2.5 px-3.5">คำอธิบายฟิลด์ (Description)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/60 font-sans">
+                      {currentTableDef.columns.map((col, idx) => (
+                        <tr
+                          key={col.name}
+                          className="hover:bg-zinc-800/30 transition-colors text-zinc-300"
+                        >
+                          <td className="py-2.5 px-3.5 text-center text-zinc-500 font-mono">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3.5 font-mono font-bold text-white flex items-center gap-1.5">
+                            <span>{col.name}</span>
+                          </td>
+                          <td className="py-2.5 px-3.5 font-mono text-cyan-300">
+                            {col.type}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-center">
+                            {col.key === 'PRI' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                PRI
+                              </span>
+                            )}
+                            {col.key === 'UNI' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                UNI
+                              </span>
+                            )}
+                            {col.key === 'FK' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                                FK
+                              </span>
+                            )}
+                            {col.key === 'MUL' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                                MUL
+                              </span>
+                            )}
+                            {!col.key && <span className="text-zinc-600">-</span>}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-center">
+                            {col.nullable ? (
+                              <span className="text-zinc-400">YES</span>
+                            ) : (
+                              <span className="text-rose-400 font-semibold">NO</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3.5 font-mono text-zinc-400">
+                            {col.defaultValue || <span className="text-zinc-600">NULL</span>}
+                          </td>
+                          <td className="py-2.5 px-3.5 text-zinc-300">{col.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Action Row: Sync Button */}
           <div className="bg-[#111728] border border-blue-900/60 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
