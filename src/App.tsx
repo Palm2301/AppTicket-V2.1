@@ -91,6 +91,7 @@ import {
   setCurrentUserId,
 } from './utils/storage';
 import { DEFAULT_ROLE_PERMISSIONS } from './data/initialData';
+import { fetchDataFromMySQL, syncDataToMySQL } from './services/mysqlService';
 
 export function App() {
   // Master state
@@ -104,6 +105,9 @@ export function App() {
   const [formConfig, setFormConfig] = useState<FormAdjustmentConfig>(getStoredFormConfig);
   const [rolePermissions, setRolePermissions] = useState<SystemRolePermissions>(getStoredRolePermissions);
   const [weeklyProblems, setWeeklyProblems] = useState<WeeklyProblemSummary[]>(getStoredWeeklyProblems);
+
+  // Database Synchronization State
+  const [dbSyncStatus, setDbSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('synced');
 
   // Authentication state
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(getStoredIsLoggedIn);
@@ -145,7 +149,118 @@ export function App() {
   // Google Sheets Sync Modal state
   const [isGoogleSheetsSyncOpen, setIsGoogleSheetsSyncOpen] = useState(false);
 
-  // Persistence effects
+  // 1. Initial Load: Fetch master state from Database on startup
+  useEffect(() => {
+    let isMounted = true;
+    async function loadDatabaseOnStartup() {
+      try {
+        setDbSyncStatus('syncing');
+        const res = await fetchDataFromMySQL();
+        if (res && res.success && res.data && isMounted) {
+          const d = res.data;
+          if (Array.isArray(d.assets) && d.assets.length > 0) setAssets(d.assets);
+          if (Array.isArray(d.transfers) && d.transfers.length > 0) setTransfers(d.transfers);
+          if (Array.isArray(d.tickets) && d.tickets.length > 0) setTickets(d.tickets);
+          if (Array.isArray(d.staffList) && d.staffList.length > 0) setStaffList(d.staffList);
+          if (Array.isArray(d.branches) && d.branches.length > 0) setBranches(d.branches);
+          if (Array.isArray(d.departments) && d.departments.length > 0) setDepartments(d.departments);
+          if (Array.isArray(d.weeklyProblems) && d.weeklyProblems.length > 0) setWeeklyProblems(d.weeklyProblems);
+          if (d.formConfig) setFormConfig(d.formConfig);
+          if (d.rolePermissions) setRolePermissions(d.rolePermissions);
+          setDbSyncStatus('synced');
+        } else if (isMounted) {
+          // If server database is empty, seed it with current initial state
+          syncDataToMySQL({
+            branches,
+            departments,
+            staffList,
+            assets,
+            transfers,
+            tickets,
+            weeklyProblems,
+            formConfig,
+            rolePermissions,
+          }).then((s) => {
+            if (isMounted) setDbSyncStatus(s.success ? 'synced' : 'idle');
+          });
+        }
+      } catch (err) {
+        console.warn('Initial DB fetch error:', err);
+        if (isMounted) setDbSyncStatus('idle');
+      }
+    }
+    loadDatabaseOnStartup();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Continuous Background Database Sync (Debounced 800ms)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        setDbSyncStatus('syncing');
+        const res = await syncDataToMySQL({
+          branches,
+          departments,
+          staffList,
+          assets,
+          transfers,
+          tickets,
+          weeklyProblems,
+          formConfig,
+          rolePermissions,
+        });
+        if (res && res.success) {
+          setDbSyncStatus('synced');
+        } else {
+          setDbSyncStatus('error');
+        }
+      } catch (err) {
+        console.error('Auto Database sync error:', err);
+        setDbSyncStatus('error');
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [
+    assets,
+    transfers,
+    tickets,
+    staffList,
+    branches,
+    departments,
+    weeklyProblems,
+    formConfig,
+    rolePermissions,
+  ]);
+
+  // Force Manual Database Sync Handler
+  const handleForceSyncDb = async () => {
+    setDbSyncStatus('syncing');
+    try {
+      const res = await syncDataToMySQL({
+        branches,
+        departments,
+        staffList,
+        assets,
+        transfers,
+        tickets,
+        weeklyProblems,
+        formConfig,
+        rolePermissions,
+      });
+      if (res && res.success) {
+        setDbSyncStatus('synced');
+      } else {
+        setDbSyncStatus('error');
+      }
+    } catch (err) {
+      setDbSyncStatus('error');
+    }
+  };
+
+  // Persistence effects for LocalStorage Cache
   useEffect(() => {
     saveAssets(assets);
   }, [assets]);
@@ -653,6 +768,8 @@ export function App() {
           onOpenGoogleSheetsSync={() => setIsGoogleSheetsSyncOpen(true)}
           onLogout={handleLogout}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
+          dbSyncStatus={dbSyncStatus}
+          onForceSyncDb={handleForceSyncDb}
         />
 
         {/* 3. Main Dynamic Body */}

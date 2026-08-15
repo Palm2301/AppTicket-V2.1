@@ -15,6 +15,7 @@
  */
 
 import {
+  AppNotification,
   Asset,
   Branch,
   Department,
@@ -52,6 +53,7 @@ const STORAGE_KEYS = {
   ROLE_PERMISSIONS: 'xt_role_permissions_v1',
   WEEKLY_PROBLEMS: 'xt_weekly_problems_v1',
   IS_LOGGED_IN: 'xt_is_logged_in_v1',
+  NOTIFICATIONS: 'xt_notifications_v1',
 };
 
 export const getStoredAssets = (): Asset[] => {
@@ -260,6 +262,34 @@ export const saveAuthStatus = (isLoggedIn: boolean): void => {
 
 export const getStoredIsLoggedIn = getStoredAuthStatus;
 export const saveIsLoggedIn = saveAuthStatus;
+
+export const getStoredNotifications = (): AppNotification[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+    if (!raw) {
+      const initialNotifs: AppNotification[] = [
+        {
+          id: 'notif-init-1',
+          type: 'NEW_TICKET',
+          title: 'ยินดีต้อนรับสู่ระบบแจ้งเตือน IT Helpdesk',
+          message: 'ระบบจะส่งเสียงและแจ้งเตือนทันทีเมื่อมีผู้ส่ง Ticket แจ้งซ่อมใหม่',
+          timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+          isRead: false,
+          priority: 'MEDIUM',
+        },
+      ];
+      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(initialNotifs));
+      return initialNotifs;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveNotifications = (notifications: AppNotification[]): void => {
+  localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
+};
 
 export const resetAllDataToDefault = (): void => {
   localStorage.setItem(STORAGE_KEYS.ASSETS, JSON.stringify(INITIAL_ASSETS));

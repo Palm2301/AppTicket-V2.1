@@ -16,8 +16,6 @@
 import React from 'react';
 import {
   QrCode,
-  Bell,
-  UserCheck,
   Building2,
   ShieldCheck,
   Laptop,
@@ -29,13 +27,18 @@ import {
   LogOut,
   Menu,
   FileSpreadsheet,
+  Database,
+  CheckCircle2,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
-import { UserProfile, UserRole } from '../types';
+import { AppNotification, UserProfile, UserRole } from '../types';
+import { NotificationCenter } from './Notifications/NotificationCenter';
 
 interface NavbarProps {
   currentUser: UserProfile;
-  allStaff: UserProfile[];
-  onSelectUser: (user: UserProfile) => void;
+  allStaff?: UserProfile[];
+  onSelectUser?: (user: UserProfile) => void;
   onOpenQrScanner: () => void;
   onSearchGlobal: (query: string) => void;
   searchQuery: string;
@@ -43,6 +46,14 @@ interface NavbarProps {
   onOpenGoogleSheetsSync?: () => void;
   onLogout?: () => void;
   onToggleMobileMenu?: () => void;
+  dbSyncStatus?: 'idle' | 'syncing' | 'synced' | 'error';
+  onForceSyncDb?: () => void;
+  notifications?: AppNotification[];
+  onMarkNotificationAsRead?: (id: string) => void;
+  onMarkAllNotificationsAsRead?: () => void;
+  onClearAllNotifications?: () => void;
+  onSelectTicketNotification?: (ticketId: string) => void;
+  onSendTestNotification?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -56,6 +67,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenGoogleSheetsSync,
   onLogout,
   onToggleMobileMenu,
+  dbSyncStatus = 'synced',
+  onForceSyncDb,
+  notifications = [],
+  onMarkNotificationAsRead,
+  onMarkAllNotificationsAsRead,
+  onClearAllNotifications,
+  onSelectTicketNotification,
+  onSendTestNotification,
 }) => {
   const getRoleBadge = (role: UserRole) => {
     switch (role) {
@@ -121,62 +140,54 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
       </div>
 
-      {/* Right Controls: Role Switcher, Password & Profile */}
+      {/* Right Controls: Notification Bell, DB Status, Sheets Sync, Password & Profile */}
       <div className="flex items-center gap-1.5 sm:gap-3">
-        {/* Role / User Switcher */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-zinc-400 hidden xl:inline flex items-center gap-1">
-            <UserCheck className="w-3.5 h-3.5 text-zinc-400" /> สลับสิทธิ์:
-          </span>
-          <select
-            id="user-role-switcher"
-            value={currentUser.id}
-            onChange={(e) => {
-              const selected = allStaff.find((s) => s.id === e.target.value);
-              if (selected) onSelectUser(selected);
-            }}
-            className="bg-[#16181f] border border-zinc-700 text-zinc-200 text-xs rounded-xl px-2 sm:px-2.5 py-1.5 font-medium focus:outline-none focus:border-cyan-500 cursor-pointer max-w-[130px] sm:max-w-[200px] truncate"
-          >
-            <optgroup label="Admin (ผู้ดูแลระบบสูงสุด)">
-              {allStaff.filter((s) => s.role === 'ADMIN').map((s) => (
-                <option key={s.id} value={s.id}>
-                  👑 {s.name} - [ADMIN]
-                </option>
-              ))}
-            </optgroup>
+        {/* Notification Center with Bell & Unread Badges */}
+        <NotificationCenter
+          notifications={notifications}
+          onMarkAsRead={(id) => onMarkNotificationAsRead && onMarkNotificationAsRead(id)}
+          onMarkAllAsRead={() => onMarkAllNotificationsAsRead && onMarkAllNotificationsAsRead()}
+          onClearAll={() => onClearAllNotifications && onClearAllNotifications()}
+          onSelectTicket={(ticketId) => onSelectTicketNotification && onSelectTicketNotification(ticketId)}
+          onSendTestNotification={onSendTestNotification}
+        />
 
-            <optgroup label="IT Role (ฝ่ายไอที / ช่าง)">
-              {allStaff.filter((s) => s.role === 'IT').map((s) => (
-                <option key={s.id} value={s.id}>
-                  💻 {s.name} - [IT Role]
-                </option>
-              ))}
-            </optgroup>
-
-            <optgroup label="ACC Role (ฝ่ายบัญชี)">
-              {allStaff.filter((s) => s.role === 'ACC').map((s) => (
-                <option key={s.id} value={s.id}>
-                  📊 {s.name} - [ACC Role]
-                </option>
-              ))}
-            </optgroup>
-
-            <optgroup label="Manager (ผู้จัดการฝ่าย)">
-              {allStaff.filter((s) => s.role === 'MANAGER').map((s) => (
-                <option key={s.id} value={s.id}>
-                  👔 {s.name} - [MANAGER]
-                </option>
-              ))}
-            </optgroup>
-
-            <optgroup label="User ทั่วไป (แจ้งซ่อม)">
-              {allStaff.filter((s) => s.role === 'USER').map((s) => (
-                <option key={s.id} value={s.id}>
-                  👤 {s.name} - [Regular User]
-                </option>
-              ))}
-            </optgroup>
-          </select>
+        {/* Database Auto-Sync Status Badge */}
+        <div
+          onClick={onForceSyncDb}
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-all active:scale-95 ${
+            dbSyncStatus === 'syncing'
+              ? 'bg-cyan-950/70 text-cyan-300 border-cyan-700/60'
+              : dbSyncStatus === 'synced'
+              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/70 hover:bg-emerald-900/60'
+              : dbSyncStatus === 'error'
+              ? 'bg-amber-950/60 text-amber-300 border-amber-800/60'
+              : 'bg-zinc-800/80 text-zinc-300 border-zinc-700'
+          }`}
+          title="สถานะการบันทึกฐานข้อมูล (คลิกเพื่อบันทึกซ้ำทันที)"
+        >
+          <Database className="w-3.5 h-3.5" />
+          {dbSyncStatus === 'syncing' ? (
+            <>
+              <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
+              <span className="hidden xl:inline">กำลังบันทึก DB...</span>
+            </>
+          ) : dbSyncStatus === 'synced' ? (
+            <>
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              <span className="hidden xl:inline">Database Synced</span>
+            </>
+          ) : dbSyncStatus === 'error' ? (
+            <>
+              <AlertCircle className="w-3 h-3 text-amber-400" />
+              <span className="hidden xl:inline">DB Local Mode</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-3 h-3 text-zinc-400" />
+              <span className="hidden xl:inline">Database Ready</span>
+            </>
+          )}
         </div>
 
         {/* Google Sheets Sync Button */}

@@ -18,6 +18,7 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
@@ -26,6 +27,37 @@ dotenv.config();
 
 const PORT = 3000;
 const HOST = '0.0.0.0';
+
+// Server-side persistent storage directory & file
+const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'database.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function readServerDatabase(): any {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (err: any) {
+    console.error('Error reading server database file:', err.message);
+  }
+  return null;
+}
+
+function writeServerDatabase(data: any): boolean {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    return true;
+  } catch (err: any) {
+    console.error('Error writing server database file:', err.message);
+    return false;
+  }
+}
 
 // MySQL Connection Pool (Lazy initialization)
 let pool: mysql.Pool | null = null;
@@ -437,14 +469,33 @@ async function startServer() {
   // 2. MySQL / Database Status
   app.get('/api/db/status', async (req, res) => {
     const status = await testConnection();
+    const serverDb = readServerDatabase();
+    
+    let tableCounts: Record<string, number> = {};
+    if (serverDb) {
+      tableCounts = {
+        branches: serverDb.branches?.length || 0,
+        departments: serverDb.departments?.length || 0,
+        users: serverDb.staffList?.length || 0,
+        assets: serverDb.assets?.length || 0,
+        transfers: serverDb.transfers?.length || 0,
+        tickets: serverDb.tickets?.length || 0,
+        weekly_problems: serverDb.weeklyProblems?.length || 0,
+      };
+    }
+
     res.json({
       connected: status.connected,
-      driver: status.connected ? 'mysql2' : 'local_fallback',
-      host: process.env.MYSQL_HOST || 'localhost',
+      driver: status.connected ? 'mysql2' : 'server_storage',
+      host: process.env.MYSQL_HOST || 'localhost (Server Persistent DB)',
       port: parseInt(process.env.MYSQL_PORT || '3306', 10),
       database: process.env.MYSQL_DATABASE || 'xingtai_db',
       user: process.env.MYSQL_USER || 'root',
-      message: status.message,
+      hasServerStorage: fs.existsSync(DATA_FILE),
+      tableCounts,
+      message: status.connected 
+        ? `Connected to MySQL: ${process.env.MYSQL_DATABASE || 'xingtai_db'}`
+        : 'Active Database: Server Persistent Storage (Auto-syncs with MySQL upon connection)',
       error: status.error,
       lastCheck: new Date().toISOString(),
     });
@@ -456,18 +507,10 @@ async function startServer() {
     res.json(status);
   });
 
-  // 4. Push sync from Client to MySQL
+  // 4. Push sync from Client to Database (File DB + MySQL)
   app.post('/api/db/sync', async (req, res) => {
-    const p = getMySQLPool();
-    if (!p) {
-      return res.json({
-        success: false,
-        message: 'MySQL pool is not configured. Data saved locally in browser storage.',
-        timestamp: new Date().toISOString(),
-      });
-    }
-
     try {
+      const payload = req.body;
       const {
         branches,
         departments,
@@ -476,257 +519,402 @@ async function startServer() {
         transfers,
         tickets,
         weeklyProblems,
+        technicians,
         formConfig,
         rolePermissions,
-      } = req.body;
+      } = payload;
 
-      // Ensure all tables and columns are up to date before syncing
-      await initDatabaseTables();
+      // 1. ALWAYS persist to server filesystem database
+      const dbPayload = {
+        branches: branches || [],
+        departments: departments || [],
+        staffList: staffList || [],
+        assets: assets || [],
+        transfers: transfers || [],
+        tickets: tickets || [],
+        weeklyProblems: weeklyProblems || [],
+        technicians: technicians || [],
+        formConfig: formConfig || null,
+        rolePermissions: rolePermissions || null,
+        lastUpdated: new Date().toISOString(),
+      };
+      writeServerDatabase(dbPayload);
 
-      const conn = await p.getConnection();
-      await conn.beginTransaction();
+      // 2. If MySQL is configured, also upsert to MySQL tables
+      const p = getMySQLPool();
+      let mysqlSaved = false;
+      let mysqlError: string | null = null;
 
-      // Upsert Branches
-      if (Array.isArray(branches) && branches.length > 0) {
-        for (const b of branches) {
-          await conn.query(
-            `INSERT INTO branches (code, name, address, phone, tax_id) 
-             VALUES (?, ?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE name=VALUES(name), address=VALUES(address), phone=VALUES(phone), tax_id=VALUES(tax_id)`,
-            [b.code, b.name, b.address, b.phone || '', b.taxId || '']
-          );
+      if (p) {
+        try {
+          await initDatabaseTables();
+          const conn = await p.getConnection();
+          await conn.beginTransaction();
+
+          // Upsert Branches
+          if (Array.isArray(branches) && branches.length > 0) {
+            for (const b of branches) {
+              await conn.query(
+                `INSERT INTO branches (code, name, address, phone, tax_id) 
+                 VALUES (?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), address=VALUES(address), phone=VALUES(phone), tax_id=VALUES(tax_id)`,
+                [b.code, b.name, b.address, b.phone || '', b.taxId || '']
+              );
+            }
+          }
+
+          // Upsert Departments
+          if (Array.isArray(departments) && departments.length > 0) {
+            for (const d of departments) {
+              await conn.query(
+                `INSERT INTO departments (code, name, name_en) 
+                 VALUES (?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), name_en=VALUES(name_en)`,
+                [d.code, d.name, d.nameEn || '']
+              );
+            }
+          }
+
+          // Upsert Users/Staff
+          if (Array.isArray(staffList) && staffList.length > 0) {
+            for (const u of staffList) {
+              await conn.query(
+                `INSERT INTO users (id, staff_id, username, password, is_first_login, name, thai_name, nickname, email, role, department_code, department_name, branch_code, branch_name, avatar_url) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE password=VALUES(password), is_first_login=VALUES(is_first_login), role=VALUES(role), thai_name=VALUES(thai_name), email=VALUES(email)`,
+                [
+                  u.id,
+                  u.staffId,
+                  u.username || u.staffId.toLowerCase(),
+                  u.password || 'Lemony2026',
+                  u.isFirstLogin ? 1 : 0,
+                  u.name,
+                  u.thaiName || u.name,
+                  u.nickname || '',
+                  u.email,
+                  u.role,
+                  u.departmentCode,
+                  u.departmentName,
+                  u.branchCode,
+                  u.branchName,
+                  u.avatarUrl || '',
+                ]
+              );
+            }
+          }
+
+          // Upsert Assets
+          if (Array.isArray(assets) && assets.length > 0) {
+            for (const a of assets) {
+              await conn.query(
+                `INSERT INTO assets (id, asset_id, item_code, serial_no, asset_name, category, brand, model, location, branch_code, department_code, owner_staff_id, owner_staff_name, status, acquisition_date, cost, supplier, warranty_expire_date, notes, image_url, repair_logs, custody_history) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE status=VALUES(status), location=VALUES(location), owner_staff_id=VALUES(owner_staff_id), owner_staff_name=VALUES(owner_staff_name), repair_logs=VALUES(repair_logs), custody_history=VALUES(custody_history), cost=VALUES(cost), notes=VALUES(notes)`,
+                [
+                  a.id,
+                  a.assetId,
+                  a.itemCode,
+                  a.serialNo,
+                  a.assetName,
+                  a.category,
+                  a.brand || '',
+                  a.model || '',
+                  a.location,
+                  a.branchCode,
+                  a.departmentCode,
+                  a.ownerStaffId || '',
+                  a.ownerStaffName || '',
+                  a.status,
+                  a.acquisitionDate,
+                  a.cost || 0,
+                  a.supplier || '',
+                  a.warrantyExpireDate || null,
+                  a.notes || '',
+                  a.imageUrl || '',
+                  JSON.stringify(a.repairLogs || []),
+                  JSON.stringify(a.custodyHistory || []),
+                ]
+              );
+            }
+          }
+
+          // Upsert Transfers
+          if (Array.isArray(transfers) && transfers.length > 0) {
+            for (const t of transfers) {
+              await conn.query(
+                `INSERT INTO transfer_forms (id, form_no, created_date, originating_branch, originating_branch_code, originating_dept, reason_type, reason_note, items, it_approved, it_approved_by, it_approved_date, it_signature, manager_approved, manager_approved_by, manager_approved_date, manager_signature, acc_approved, acc_approved_by, acc_approved_date, acc_signature, status, delivered_by, delivery_date, vehicle_plate_no, receiver_sign_date, receiver_signature, notes) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE status=VALUES(status), it_approved=VALUES(it_approved), manager_approved=VALUES(manager_approved), acc_approved=VALUES(acc_approved), receiver_signature=VALUES(receiver_signature), it_signature=VALUES(it_signature), manager_signature=VALUES(manager_signature), acc_signature=VALUES(acc_signature)`,
+                [
+                  t.id,
+                  t.formNo,
+                  t.createdDate,
+                  t.originatingBranch,
+                  t.originatingBranchCode,
+                  t.originatingDept,
+                  t.reasonType,
+                  t.reasonNote || '',
+                  JSON.stringify(t.items || []),
+                  t.itApproved ? 1 : 0,
+                  t.itApprovedBy || '',
+                  t.itApprovedDate || null,
+                  t.itSignature || '',
+                  t.managerApproved ? 1 : 0,
+                  t.managerApprovedBy || '',
+                  t.managerApprovedDate || null,
+                  t.managerSignature || '',
+                  t.accApproved ? 1 : 0,
+                  t.accApprovedBy || '',
+                  t.accApprovedDate || null,
+                  t.accSignature || '',
+                  t.status,
+                  t.deliveredBy || '',
+                  t.deliveryDate || null,
+                  t.vehiclePlateNo || '',
+                  t.receiverSignDate || null,
+                  t.receiverSignature || '',
+                  t.notes || '',
+                ]
+              );
+            }
+          }
+
+          // Upsert Tickets
+          if (Array.isArray(tickets) && tickets.length > 0) {
+            for (const tk of tickets) {
+              await conn.query(
+                `INSERT INTO it_tickets (id, subject, details, category, priority, status, requester_staff_id, requester_staff_name, requester_dept, requester_branch, assigned_to_technician, assigned_technician_name, asset_id, asset_name, created_at, updated_at, resolved_at, resolution_hours, resolution_note, repair_cost, repair_vendor, repair_sent_date, repair_returned_date, history_log) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE status=VALUES(status), assigned_to_technician=VALUES(assigned_to_technician), assigned_technician_name=VALUES(assigned_technician_name), resolved_at=VALUES(resolved_at), resolution_hours=VALUES(resolution_hours), resolution_note=VALUES(resolution_note), repair_cost=VALUES(repair_cost), updated_at=VALUES(updated_at), history_log=VALUES(history_log)`,
+                [
+                  tk.id,
+                  tk.subject,
+                  tk.details,
+                  tk.category,
+                  tk.priority,
+                  tk.status,
+                  tk.requesterStaffId,
+                  tk.requesterStaffName,
+                  tk.requesterDept,
+                  tk.requesterBranch,
+                  tk.assignedToTechnician || '',
+                  tk.assignedTechnicianName || '',
+                  tk.assetId || '',
+                  tk.assetName || '',
+                  tk.createdAt,
+                  tk.updatedAt,
+                  tk.resolvedAt || null,
+                  tk.resolutionHours || null,
+                  tk.resolutionNote || '',
+                  tk.repairCost || null,
+                  tk.repairVendor || '',
+                  tk.repairSentDate || null,
+                  tk.repairReturnedDate || null,
+                  JSON.stringify(tk.historyLog || []),
+                ]
+              );
+            }
+          }
+
+          if (formConfig) {
+            await conn.query(
+              `INSERT INTO system_settings (setting_key, setting_value) VALUES ('form_adjustment_config', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`,
+              [JSON.stringify(formConfig)]
+            );
+          }
+          if (rolePermissions) {
+            await conn.query(
+              `INSERT INTO system_settings (setting_key, setting_value) VALUES ('role_permissions', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`,
+              [JSON.stringify(rolePermissions)]
+            );
+          }
+
+          await conn.commit();
+          conn.release();
+          mysqlSaved = true;
+        } catch (dbErr: any) {
+          console.warn('MySQL push warning (saved to server database):', dbErr.message);
+          mysqlError = dbErr.message;
         }
       }
-
-      // Upsert Departments
-      if (Array.isArray(departments) && departments.length > 0) {
-        for (const d of departments) {
-          await conn.query(
-            `INSERT INTO departments (code, name, name_en) 
-             VALUES (?, ?, ?) 
-             ON DUPLICATE KEY UPDATE name=VALUES(name), name_en=VALUES(name_en)`,
-            [d.code, d.name, d.nameEn || '']
-          );
-        }
-      }
-
-      // Upsert Staff/Users
-      if (Array.isArray(staffList) && staffList.length > 0) {
-        for (const u of staffList) {
-          await conn.query(
-            `INSERT INTO users (id, staff_id, username, password, is_first_login, name, thai_name, nickname, email, role, department_code, department_name, branch_code, branch_name, avatar_url) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE password=VALUES(password), is_first_login=VALUES(is_first_login), role=VALUES(role), thai_name=VALUES(thai_name)`,
-            [
-              u.id,
-              u.staffId,
-              u.username || u.staffId.toLowerCase(),
-              u.password || 'Lemony2026',
-              u.isFirstLogin ? 1 : 0,
-              u.name,
-              u.thaiName || u.name,
-              u.nickname || '',
-              u.email,
-              u.role,
-              u.departmentCode,
-              u.departmentName,
-              u.branchCode,
-              u.branchName,
-              u.avatarUrl || '',
-            ]
-          );
-        }
-      }
-
-      // Upsert Assets
-      if (Array.isArray(assets) && assets.length > 0) {
-        for (const a of assets) {
-          await conn.query(
-            `INSERT INTO assets (id, asset_id, item_code, serial_no, asset_name, category, brand, model, location, branch_code, department_code, owner_staff_id, owner_staff_name, status, acquisition_date, cost, supplier, warranty_expire_date, notes, image_url, repair_logs, custody_history) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE status=VALUES(status), location=VALUES(location), owner_staff_id=VALUES(owner_staff_id), owner_staff_name=VALUES(owner_staff_name), repair_logs=VALUES(repair_logs), custody_history=VALUES(custody_history)`,
-            [
-              a.id,
-              a.assetId,
-              a.itemCode,
-              a.serialNo,
-              a.assetName,
-              a.category,
-              a.brand || '',
-              a.model || '',
-              a.location,
-              a.branchCode,
-              a.departmentCode,
-              a.ownerStaffId || '',
-              a.ownerStaffName || '',
-              a.status,
-              a.acquisitionDate,
-              a.cost || 0,
-              a.supplier || '',
-              a.warrantyExpireDate || null,
-              a.notes || '',
-              a.imageUrl || '',
-              JSON.stringify(a.repairLogs || []),
-              JSON.stringify(a.custodyHistory || []),
-            ]
-          );
-        }
-      }
-
-      // Upsert Transfers
-      if (Array.isArray(transfers) && transfers.length > 0) {
-        for (const t of transfers) {
-          await conn.query(
-            `INSERT INTO transfer_forms (id, form_no, created_date, originating_branch, originating_branch_code, originating_dept, reason_type, reason_note, items, it_approved, it_approved_by, it_approved_date, it_signature, manager_approved, manager_approved_by, manager_approved_date, manager_signature, acc_approved, acc_approved_by, acc_approved_date, acc_signature, status, delivered_by, delivery_date, vehicle_plate_no, receiver_sign_date, receiver_signature, notes) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE status=VALUES(status), it_approved=VALUES(it_approved), manager_approved=VALUES(manager_approved), acc_approved=VALUES(acc_approved)`,
-            [
-              t.id,
-              t.formNo,
-              t.createdDate,
-              t.originatingBranch,
-              t.originatingBranchCode,
-              t.originatingDept,
-              t.reasonType,
-              t.reasonNote || '',
-              JSON.stringify(t.items || []),
-              t.itApproved ? 1 : 0,
-              t.itApprovedBy || '',
-              t.itApprovedDate || null,
-              t.itSignature || '',
-              t.managerApproved ? 1 : 0,
-              t.managerApprovedBy || '',
-              t.managerApprovedDate || null,
-              t.managerSignature || '',
-              t.accApproved ? 1 : 0,
-              t.accApprovedBy || '',
-              t.accApprovedDate || null,
-              t.accSignature || '',
-              t.status,
-              t.deliveredBy || '',
-              t.deliveryDate || null,
-              t.vehiclePlateNo || '',
-              t.receiverSignDate || null,
-              t.receiverSignature || '',
-              t.notes || '',
-            ]
-          );
-        }
-      }
-
-      // Upsert IT Tickets
-      if (Array.isArray(tickets) && tickets.length > 0) {
-        for (const tk of tickets) {
-          await conn.query(
-            `INSERT INTO it_tickets (id, subject, details, category, priority, status, requester_staff_id, requester_staff_name, requester_dept, requester_branch, assigned_to_technician, assigned_technician_name, asset_id, asset_name, created_at, updated_at, resolved_at, resolution_hours, resolution_note, repair_cost, repair_vendor, repair_sent_date, repair_returned_date, history_log) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE status=VALUES(status), assigned_to_technician=VALUES(assigned_to_technician), resolved_at=VALUES(resolved_at), resolution_note=VALUES(resolution_note)`,
-            [
-              tk.id,
-              tk.subject,
-              tk.details,
-              tk.category,
-              tk.priority,
-              tk.status,
-              tk.requesterStaffId,
-              tk.requesterStaffName,
-              tk.requesterDept,
-              tk.requesterBranch,
-              tk.assignedToTechnician || '',
-              tk.assignedTechnicianName || '',
-              tk.assetId || '',
-              tk.assetName || '',
-              tk.createdAt,
-              tk.updatedAt,
-              tk.resolvedAt || null,
-              tk.resolutionHours || null,
-              tk.resolutionNote || '',
-              tk.repairCost || null,
-              tk.repairVendor || '',
-              tk.repairSentDate || null,
-              tk.repairReturnedDate || null,
-              JSON.stringify(tk.historyLog || []),
-            ]
-          );
-        }
-      }
-
-      // Settings
-      if (formConfig) {
-        await conn.query(
-          `INSERT INTO system_settings (setting_key, setting_value) VALUES ('form_adjustment_config', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`,
-          [JSON.stringify(formConfig)]
-        );
-      }
-      if (rolePermissions) {
-        await conn.query(
-          `INSERT INTO system_settings (setting_key, setting_value) VALUES ('role_permissions', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`,
-          [JSON.stringify(rolePermissions)]
-        );
-      }
-
-      await conn.commit();
-      conn.release();
 
       res.json({
         success: true,
-        message: 'Successfully synchronized data to MySQL database.',
+        driver: mysqlSaved ? 'mysql2' : 'server_storage',
+        message: mysqlSaved 
+          ? 'บันทึกข้อมูลลงฐานข้อมูล MySQL และเซิร์ฟเวอร์เรียบร้อยแล้ว (MySQL Synced)' 
+          : 'บันทึกข้อมูลลงฐานข้อมูลเซิร์ฟเวอร์เรียบร้อยแล้ว (Server Storage Synced)',
+        mysqlSaved,
+        mysqlError,
         timestamp: new Date().toISOString(),
       });
     } catch (err: any) {
+      console.error('Database sync error:', err);
       res.status(500).json({
         success: false,
-        message: `MySQL sync failed: ${err.message}`,
+        message: `Database sync error: ${err.message}`,
         timestamp: new Date().toISOString(),
       });
     }
   });
 
-  // 5. Pull all data from MySQL
+  // 5. Pull all data from Database (MySQL or Server DB)
   app.get('/api/db/data', async (req, res) => {
     const p = getMySQLPool();
-    if (!p) {
-      return res.status(503).json({
-        success: false,
-        message: 'MySQL pool is not active',
-      });
+    
+    // Attempt MySQL query first if connected
+    if (p && isDbConnected) {
+      try {
+        const [branches]: any = await p.query('SELECT * FROM branches');
+        const [departments]: any = await p.query('SELECT * FROM departments');
+        const [users]: any = await p.query('SELECT * FROM users');
+        const [assets]: any = await p.query('SELECT * FROM assets');
+        const [transfers]: any = await p.query('SELECT * FROM transfer_forms');
+        const [tickets]: any = await p.query('SELECT * FROM it_tickets');
+        const [weeklyProblems]: any = await p.query('SELECT * FROM weekly_problems');
+
+        const formattedData = {
+          branches: branches.map((b: any) => ({
+            code: b.code,
+            name: b.name,
+            address: b.address,
+            phone: b.phone || '',
+            taxId: b.tax_id || '',
+          })),
+          departments: departments.map((d: any) => ({
+            code: d.code,
+            name: d.name,
+            nameEn: d.name_en || '',
+          })),
+          staffList: users.map((u: any) => ({
+            id: u.id,
+            staffId: u.staff_id,
+            username: u.username,
+            password: u.password,
+            isFirstLogin: Boolean(u.is_first_login),
+            name: u.name,
+            thaiName: u.thai_name || u.name,
+            nickname: u.nickname || '',
+            email: u.email,
+            role: u.role,
+            departmentCode: u.department_code,
+            departmentName: u.department_name,
+            branchCode: u.branch_code,
+            branchName: u.branch_name,
+            avatarUrl: u.avatar_url || '',
+          })),
+          assets: assets.map((a: any) => ({
+            id: a.id,
+            assetId: a.asset_id,
+            itemCode: a.item_code,
+            serialNo: a.serial_no,
+            assetName: a.asset_name,
+            category: a.category,
+            brand: a.brand || '',
+            model: a.model || '',
+            location: a.location,
+            branchCode: a.branch_code,
+            departmentCode: a.department_code,
+            ownerStaffId: a.owner_staff_id || '',
+            ownerStaffName: a.owner_staff_name || '',
+            status: a.status,
+            acquisitionDate: a.acquisition_date,
+            cost: Number(a.cost) || 0,
+            supplier: a.supplier || '',
+            warrantyExpireDate: a.warranty_expire_date || null,
+            notes: a.notes || '',
+            imageUrl: a.image_url || '',
+            repairLogs: typeof a.repair_logs === 'string' ? JSON.parse(a.repair_logs) : a.repair_logs || [],
+            custodyHistory: typeof a.custody_history === 'string' ? JSON.parse(a.custody_history) : a.custody_history || [],
+          })),
+          transfers: transfers.map((t: any) => ({
+            id: t.id,
+            formNo: t.form_no,
+            createdDate: t.created_date,
+            originatingBranch: t.originating_branch,
+            originatingBranchCode: t.originating_branch_code,
+            originatingDept: t.originating_dept,
+            reasonType: t.reason_type,
+            reasonNote: t.reason_note || '',
+            items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items || [],
+            itApproved: Boolean(t.it_approved),
+            itApprovedBy: t.it_approved_by || '',
+            itApprovedDate: t.it_approved_date || null,
+            itSignature: t.it_signature || '',
+            managerApproved: Boolean(t.manager_approved),
+            managerApprovedBy: t.manager_approved_by || '',
+            managerApprovedDate: t.manager_approved_date || null,
+            managerSignature: t.manager_signature || '',
+            accApproved: Boolean(t.acc_approved),
+            accApprovedBy: t.acc_approved_by || '',
+            accApprovedDate: t.acc_approved_date || null,
+            accSignature: t.acc_signature || '',
+            status: t.status,
+            deliveredBy: t.delivered_by || '',
+            deliveryDate: t.delivery_date || null,
+            vehiclePlateNo: t.vehicle_plate_no || '',
+            receiverSignDate: t.receiver_sign_date || null,
+            receiverSignature: t.receiver_signature || '',
+            notes: t.notes || '',
+          })),
+          tickets: tickets.map((tk: any) => ({
+            id: tk.id,
+            subject: tk.subject,
+            details: tk.details,
+            category: tk.category,
+            priority: tk.priority,
+            status: tk.status,
+            requesterStaffId: tk.requester_staff_id,
+            requesterStaffName: tk.requester_staff_name,
+            requesterDept: tk.requester_dept,
+            requesterBranch: tk.requester_branch,
+            assignedToTechnician: tk.assigned_to_technician || '',
+            assignedTechnicianName: tk.assigned_technician_name || '',
+            assetId: tk.asset_id || '',
+            assetName: tk.asset_name || '',
+            createdAt: tk.created_at,
+            updatedAt: tk.updated_at,
+            resolvedAt: tk.resolved_at || null,
+            resolutionHours: tk.resolution_hours ? Number(tk.resolution_hours) : null,
+            resolutionNote: tk.resolution_note || '',
+            repairCost: tk.repair_cost ? Number(tk.repair_cost) : null,
+            repairVendor: tk.repair_vendor || '',
+            repairSentDate: tk.repair_sent_date || null,
+            repairReturnedDate: tk.repair_returned_date || null,
+            historyLog: typeof tk.history_log === 'string' ? JSON.parse(tk.history_log) : tk.history_log || [],
+          })),
+          weeklyProblems,
+        };
+
+        // Cache into server database
+        writeServerDatabase(formattedData);
+
+        return res.json({
+          success: true,
+          source: 'mysql',
+          data: formattedData,
+        });
+      } catch (err: any) {
+        console.warn('MySQL data fetch fallback to server database:', err.message);
+      }
     }
 
-    try {
-      const [branches]: any = await p.query('SELECT * FROM branches');
-      const [departments]: any = await p.query('SELECT * FROM departments');
-      const [users]: any = await p.query('SELECT * FROM users');
-      const [assets]: any = await p.query('SELECT * FROM assets');
-      const [transfers]: any = await p.query('SELECT * FROM transfer_forms');
-      const [tickets]: any = await p.query('SELECT * FROM it_tickets');
-      const [weeklyProblems]: any = await p.query('SELECT * FROM weekly_problems');
-
-      res.json({
+    // Fallback to server-side filesystem database
+    const serverData = readServerDatabase();
+    if (serverData) {
+      return res.json({
         success: true,
-        branches,
-        departments,
-        staffList: users,
-        assets: assets.map((a: any) => ({
-          ...a,
-          repairLogs: typeof a.repair_logs === 'string' ? JSON.parse(a.repair_logs) : a.repair_logs || [],
-          custodyHistory: typeof a.custody_history === 'string' ? JSON.parse(a.custody_history) : a.custody_history || [],
-        })),
-        transfers: transfers.map((t: any) => ({
-          ...t,
-          items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items || [],
-        })),
-        tickets: tickets.map((tk: any) => ({
-          ...tk,
-          historyLog: typeof tk.history_log === 'string' ? JSON.parse(tk.history_log) : tk.history_log || [],
-        })),
-        weeklyProblems,
-      });
-    } catch (err: any) {
-      res.status(500).json({
-        success: false,
-        error: err.message,
+        source: 'server_storage',
+        data: serverData,
       });
     }
+
+    // If nothing saved on server yet
+    res.json({
+      success: true,
+      source: 'none',
+      data: null,
+    });
   });
 
   // ---------------------------------------------------------

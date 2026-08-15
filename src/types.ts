@@ -365,3 +365,17 @@ export interface WeeklyProblemSummary {
   networkCount: number;
   resolvedRate: number;
 }
+
+export interface AppNotification {
+  id: string;
+  type: 'NEW_TICKET' | 'TICKET_STATUS' | 'TICKET_ASSIGNED' | 'TRANSFER_APPROVAL' | 'SYSTEM';
+  title: string;
+  message: string;
+  timestamp: string;
+  isRead: boolean;
+  ticketId?: string;
+  transferId?: string;
+  priority?: TicketPriority;
+  requesterName?: string;
+  department?: string;
+}
